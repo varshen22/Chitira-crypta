@@ -1,4 +1,4 @@
-﻿# ── Python ────────────────────────────────────────────────────────────────────
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.class
@@ -43,9 +43,7 @@ Thumbs.db
 desktop.ini
 
 # ── Steganography outputs ─────────────────────────────────────────────────────
-# Stego output images contain hidden data — keep out of version control
-*_stego.png
-*_stego.jpg
+# Intentionally not excluded — stego images tracked when explicitly committed
 
 # ── Secrets / keys ───────────────────────────────────────────────────────────
 *.key
