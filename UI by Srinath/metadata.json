@@ -1,0 +1,8 @@
+{
+  "name": "Chitra Crypta",
+  "description": "A secure medical vault and login portal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
