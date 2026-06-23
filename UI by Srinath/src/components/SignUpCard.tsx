@@ -2,20 +2,73 @@ import React, { useState } from 'react';
 import { User, Lock, Eye, EyeOff, ChevronRight, Mail, KeyRound, CheckCircle2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
+
 export function SignUpCard() {
   const [showPassword, setShowPassword] = useState(false);
   const [isFocused, setIsFocused] = useState<'name' | 'email' | 'password' | 'otp' | null>(null);
   const [step, setStep] = useState<'details' | 'otp'>('details');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [error, setError] = useState<{ type: 'name' | 'email' | 'server', message: string } | null>(null);
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+
     if (step === 'details') {
-      setStep('otp');
+      try {
+        const response = await fetch('http://localhost:5000/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, password }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          setError({
+            type: data.type || 'server',
+            message: data.message || 'Registration failed'
+          });
+          return;
+        }
+
+        setStep('otp');
+      } catch (err) {
+        setError({
+          type: 'server',
+          message: 'Could not connect to server. Ensure backend is running.'
+        });
+      }
     } else {
-      // OTP verified, redirect to login
-      navigate('/');
+      try {
+        const response = await fetch('http://localhost:5000/api/auth/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, otp }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          setError({
+            type: 'server',
+            message: data.message || 'Invalid OTP'
+          });
+          return;
+        }
+
+        // OTP verified and User Created, redirect to login
+        navigate('/');
+      } catch (err) {
+        setError({
+          type: 'server',
+          message: 'Could not connect to server. Ensure backend is running.'
+        });
+      }
     }
   };
 
@@ -39,6 +92,21 @@ export function SignUpCard() {
 
         {/* Form Section */}
         <form className="p-8 space-y-6" onSubmit={handleSubmit}>
+          {error && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600 flex flex-col gap-2">
+              <p>{error.message}</p>
+              {error.type === 'email' && (
+                <button 
+                  type="button" 
+                  onClick={() => navigate('/')} 
+                  className="text-red-700 font-semibold underline text-left w-fit hover:text-red-800 transition-colors"
+                >
+                  Go back to log in page
+                </button>
+              )}
+            </div>
+          )}
+
           {step === 'details' ? (
             <>
               {/* Name */}
@@ -56,6 +124,8 @@ export function SignUpCard() {
                   <input
                     id="name"
                     type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
                     placeholder="e.g. Dr. Chitra"
                     required
                     className="w-full pl-10 pr-4 py-3 rounded-lg bg-transparent outline-none text-brand-text placeholder:text-gray-400"
@@ -106,6 +176,8 @@ export function SignUpCard() {
                   <input
                     id="password"
                     type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     required
                     className="w-full pl-10 pr-12 py-3 rounded-lg bg-transparent outline-none text-brand-text placeholder:text-gray-400"
@@ -148,8 +220,14 @@ export function SignUpCard() {
                     id="otp"
                     type="text"
                     maxLength={6}
+                    value={otp}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '');
+                      setOtp(val);
+                    }}
                     placeholder="000000"
                     required
+                    autoComplete="one-time-code"
                     className="w-full pl-10 pr-4 py-4 rounded-lg bg-transparent outline-none text-brand-text placeholder:text-gray-400 text-center text-xl tracking-[0.5em] font-mono"
                     onFocus={() => setIsFocused('otp')}
                     onBlur={() => setIsFocused(null)}
