@@ -62,29 +62,45 @@ export function VaultForm({ mode, initialData, onCancel, onSave }: VaultFormProp
     apiFormData.append('image', selectedFile);
     apiFormData.append('passphrase', 'taravusecret'); // Default hackathon test key
 
+    // If there is form data, we ENCODE it into the image.
+    // If the form is completely empty (no name), we could assume it's a decode, 
+    // but since we are "Saving", let's assume we want to ENCODE this form data into the image!
+    const jsonPayload = JSON.stringify(formData);
+    apiFormData.append('text', jsonPayload);
+
     try {
-      const response = await fetch('http://localhost:5000/api/decode', {
+      const response = await fetch('http://localhost:5000/api/encode', {
         method: 'POST',
         body: apiFormData
       });
       
-      const result = await response.json();
-      
-      if (result.success) {
+      if (response.ok) {
         setIsSaved(true);
-        console.log("Decrypted Data from Python:", result.data);
+        console.log("Successfully encoded data into image!");
         
-        // Pass the decrypted data back up to the parent component
+        // Trigger a download of the encrypted image
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = downloadUrl;
+        a.download = `patient_vault_${formData.name.replace(/\s+/g, '_')}_secure.png`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(downloadUrl);
+        
+        // Pass the data back up to the parent component
         setTimeout(() => {
-          onSave(result.data);
+          onSave(formData);
         }, 1500);
       } else {
-        alert("Extraction failed: " + result.error);
+        const result = await response.json();
+        alert("Encryption failed: " + result.error);
         setIsSaving(false);
       }
     } catch (error) {
       console.error("API Error:", error);
-      alert("Could not connect to the Python backend. Make sure it is running on port 5000!");
+      alert("Could not connect to the backend. Make sure it is running on port 5000!");
       setIsSaving(false);
     }
   };

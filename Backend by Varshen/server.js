@@ -3,6 +3,27 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const { Resend } = require('resend');
+const multer = require('multer');
+const { execFile } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+
+// Ensure uploads directory exists
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
+// Multer config
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/')
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + '-' + file.originalname)
+  }
+});
+const upload = multer({ storage: storage });
 
 const User = require('./models/User');
 const Otp = require('./models/Otp');
@@ -102,6 +123,106 @@ app.post('/api/auth/verify-otp', async (req, res) => {
     console.error('Verify OTP error:', error);
     res.status(500).json({ message: 'Server error during verification' });
   }
+});
+
+app.post('/api/decode', upload.single('image'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No image provided" });
+  }
+
+  const passphrase = req.body.passphrase || 'taravusecret';
+  const inputImagePath = req.file.path;
+
+  const pythonScript = path.join(__dirname, 'bridge.py');
+  
+  execFile('python', [pythonScript, 'decode', inputImagePath, passphrase], (error, stdout, stderr) => {
+    // Delete the temp uploaded file
+    if (fs.existsSync(inputImagePath)) fs.unlinkSync(inputImagePath);
+    
+    if (error) {
+      console.error('Python decode error:', stderr || error.message);
+      // Try to extract exact error from bridge.py stdout
+      try {
+        const lines = stdout.trim().split('\n');
+        const result = JSON.parse(lines[lines.length - 1]);
+        if (result.error) {
+           return res.status(500).json({ success: false, error: result.error });
+        }
+      } catch (e) {
+          // Ignore parse errors here
+      }
+      return res.status(500).json({ success: false, error: 'Decryption failed or image corrupted.' });
+    }
+
+    try {
+      const lines = stdout.trim().split('\n');
+      const result = JSON.parse(lines[lines.length - 1]);
+      
+      if (result.error) {
+        return res.status(400).json({ success: false, error: result.error });
+      }
+
+      // Try to parse the nested data as JSON if it's a JSON string, otherwise return as-is
+      let parsedData;
+      try {
+        parsedData = JSON.parse(result.data);
+      } catch (e) {
+        parsedData = result.data;
+      }
+
+      res.status(200).json({ success: true, data: parsedData });
+    } catch (parseErr) {
+      console.error('Parse error:', parseErr);
+      res.status(500).json({ success: false, error: 'Failed to parse python output' });
+    }
+  });
+});
+
+app.post('/api/encode', upload.single('image'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No image provided" });
+  }
+
+  const passphrase = req.body.passphrase;
+  const text = req.body.text;
+  
+  if (!passphrase || !text) {
+    if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    return res.status(400).json({ error: "Missing passphrase or text" });
+  }
+
+  const inputImagePath = req.file.path;
+  const outputImagePath = path.join(__dirname, 'uploads', 'encoded_' + Date.now() + '.png');
+  const pythonScript = path.join(__dirname, 'bridge.py');
+
+  execFile('python', [pythonScript, 'encode', inputImagePath, text, passphrase, outputImagePath], (error, stdout, stderr) => {
+    if (fs.existsSync(inputImagePath)) fs.unlinkSync(inputImagePath);
+
+    if (error) {
+      console.error('Python encode error:', stderr || error.message);
+      if (fs.existsSync(outputImagePath)) fs.unlinkSync(outputImagePath);
+      return res.status(500).json({ success: false, error: 'Encoding failed.' });
+    }
+
+    try {
+      const lines = stdout.trim().split('\n');
+      const result = JSON.parse(lines[lines.length - 1]);
+      
+      if (result.error) {
+        if (fs.existsSync(outputImagePath)) fs.unlinkSync(outputImagePath);
+        return res.status(400).json({ success: false, error: result.error });
+      }
+
+      // Send the encoded image back to the client
+      res.download(outputImagePath, 'encoded_image.png', (err) => {
+        if (fs.existsSync(outputImagePath)) fs.unlinkSync(outputImagePath);
+      });
+    } catch (parseErr) {
+      console.error('Parse error:', parseErr);
+      if (fs.existsSync(outputImagePath)) fs.unlinkSync(outputImagePath);
+      res.status(500).json({ success: false, error: 'Failed to parse python output' });
+    }
+  });
 });
 
 app.listen(port, () => {

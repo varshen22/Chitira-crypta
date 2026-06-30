@@ -2,13 +2,14 @@ import os
 import struct
 from PIL import Image
 from Crypto.Cipher import AES
-from Crypto.Protocol.KDF import PBKDF2
-from Crypto.Hash import SHA256, HMAC
+from Crypto.Protocol.KDF import scrypt
 from Crypto.Random import get_random_bytes
 
 # --- Constants ---
 MAGIC_BYTES    = b"STEG"   # 4-byte sentinel for decoder validation
-PBKDF2_ITERS   = 600_000   # OWASP-recommended PBKDF2 iteration count
+SCRYPT_N       = 131072    # CPU/Memory cost factor
+SCRYPT_R       = 8         # Block size
+SCRYPT_P       = 1         # Parallelization factor
 SALT_SIZE      = 16        # bytes
 NONCE_SIZE     = 12        # bytes (standard GCM nonce)
 TAG_SIZE       = 16        # bytes (GCM authentication tag)
@@ -17,13 +18,14 @@ LEN_FIELD_SIZE = 4         # bytes (uint32, big-endian)
 
 
 def _derive_key(passphrase: str, salt: bytes) -> bytes:
-    """Derive a 256-bit AES key from passphrase using PBKDF2-HMAC-SHA256."""
-    return PBKDF2(
-        password=passphrase.encode("utf-8"),
-        salt=salt,
-        dkLen=KEY_SIZE,
-        count=PBKDF2_ITERS,
-        prf=lambda p, s: HMAC.new(p, s, SHA256).digest(),
+    """Derive a 256-bit AES key from passphrase using scrypt for higher security."""
+    return scrypt(
+        passphrase,
+        salt,
+        key_len=KEY_SIZE,
+        N=SCRYPT_N,
+        r=SCRYPT_R,
+        p=SCRYPT_P
     )
 
 

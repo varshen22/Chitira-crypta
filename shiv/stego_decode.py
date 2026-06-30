@@ -2,19 +2,34 @@ import sys
 import struct
 from PIL import Image
 from Crypto.Cipher import AES
-from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Protocol.KDF import scrypt, PBKDF2
 from Crypto.Hash import SHA256, HMAC
 
 # --- Constants (Must perfectly match Logesh's encoder) ---
 MAGIC_BYTES    = b"STEG"
-PBKDF2_ITERS   = 600_000
+SCRYPT_N       = 131072
+SCRYPT_R       = 8
+SCRYPT_P       = 1
 SALT_SIZE      = 16
 NONCE_SIZE     = 12
 TAG_SIZE       = 16
 KEY_SIZE       = 32
 LEN_FIELD_SIZE = 4
+PBKDF2_ITERS   = 600_000
 
 def _derive_key(passphrase: str, salt: bytes) -> bytes:
+    """Derive a 256-bit AES key from passphrase using scrypt for higher security."""
+    return scrypt(
+        passphrase,
+        salt,
+        key_len=KEY_SIZE,
+        N=SCRYPT_N,
+        r=SCRYPT_R,
+        p=SCRYPT_P
+    )
+
+def _derive_key_legacy(passphrase: str, salt: bytes) -> bytes:
+    """Fallback legacy PBKDF2 derivation for old images."""
     return PBKDF2(
         password=passphrase.encode("utf-8"),
         salt=salt,
@@ -66,10 +81,18 @@ def decode_data_from_image(input_image_path: str, passphrase: str) -> str:
     except StopIteration:
         raise ValueError("Reached end of image pixels before payload was fully read. Image is corrupted.")
 
+    # Try modern secure scrypt first
     try:
         key = _derive_key(passphrase, salt)
         cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
         plaintext = cipher.decrypt_and_verify(ciphertext, tag)
         return plaintext.decode("utf-8")
     except ValueError:
-        raise ValueError("Decryption failed! Incorrect passphrase or corrupted image data.")
+        # Fallback to legacy PBKDF2
+        try:
+            legacy_key = _derive_key_legacy(passphrase, salt)
+            legacy_cipher = AES.new(legacy_key, AES.MODE_GCM, nonce=nonce)
+            legacy_plaintext = legacy_cipher.decrypt_and_verify(ciphertext, tag)
+            return legacy_plaintext.decode("utf-8")
+        except ValueError:
+            raise ValueError("Decryption failed! Incorrect passphrase or corrupted image data.")
